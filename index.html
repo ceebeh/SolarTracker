@@ -128,6 +128,10 @@
         z-index: 1;
         pointer-events: none;
       }
+      .live-ring.paused {
+        animation-play-state: paused;
+        opacity: 0;
+      }
       .live-core {
         position: absolute;
         top: 0;
@@ -280,6 +284,12 @@
         font-size: 11px;
         color: rgba(249, 251, 251, 0.55);
         font-weight: 600;
+      }
+      .live-popup-time {
+        font-size: 10px;
+        color: rgba(249, 251, 251, 0.4);
+        margin-top: 4px;
+        font-weight: 400;
       }
 
       /* Partner popup */
@@ -862,32 +872,43 @@
       });
 
       // ─── LIVE GPS ──────────────────────────────────────────
-      function speedPopupHtml(kmh) {
+      function formatCEST(epochSeconds) {
+        return new Date(epochSeconds * 1000).toLocaleTimeString("en-GB", {
+          timeZone: "Europe/Brussels",
+          hour: "2-digit",
+          minute: "2-digit",
+          second: "2-digit",
+        });
+      }
+
+      function speedPopupHtml(kmh, epochTime) {
+        const timeStr = epochTime ? formatCEST(epochTime) + " CEST" : "—";
         return `<div class="live-popup-inner">
           <div class="live-popup-name">Infinite Apollo</div>
           <div class="live-popup-label">Current Speed</div>
           <div class="live-popup-speed">${kmh}</div>
           <div class="live-popup-unit">km/h</div>
+          <div class="live-popup-time">Last updated: ${timeStr}</div>
         </div>`;
       }
 
-      function createLiveMarker(lat, lng, kmh = 0) {
+      function createLiveMarker(lat, lng, kmh = 0, isoTime = null) {
         return L.marker([lat, lng], {
           icon: L.divIcon({
             className: "",
             iconSize: [0, 0],
             html: `<div class="live-marker-wrapper">
-                    <div class="live-ring"></div>
+                    <div class="live-ring paused"></div>
                     <div class="live-core"><img src="innoptus_icon_wit.png" alt="Innoptus" /></div>
                   </div>`,
           }),
           zIndexOffset: 1000,
         })
           .addTo(map)
-          .bindPopup(speedPopupHtml(kmh), { maxWidth: 160 });
+          .bindPopup(speedPopupHtml(kmh, isoTime), { maxWidth: 180 });
       }
 
-      let lastGpsUpdate = null;
+      let lastDbTime = null;
 
       function centreOnLive() {
         if (liveMarker && firstFix) {
@@ -899,52 +920,52 @@
         }
       }
 
+      const STALE_MS = 60000;
+
+      function applyStaleState(isoTime) {
+        const isStale = !isoTime || Date.now() - new Date(isoTime * 1000).getTime() > STALE_MS;
+        document.getElementById("stale-overlay").classList.toggle("visible", isStale);
+        const ring = document.querySelector(".live-ring");
+        if (ring) ring.classList.toggle("paused", isStale);
+        return isStale;
+      }
+
       async function fetchLivePosition() {
         try {
           const data = await (await fetch(GPS_ENDPOINT)).json();
           if (!data || data.lat === undefined) return;
-          const kmh = Math.round(data.speed || 0);
-          lastGpsUpdate = Date.now();
-          document.getElementById("stale-overlay").classList.remove("visible");
-          document
-            .getElementById("waiting-overlay")
-            .classList.remove("visible");
+          const kmh = Math.round(data.spd || 0);
+          const isoTime = data.time || null;
+          if (isoTime) lastDbTime = new Date(isoTime * 1000);
+
           if (!liveMarker) {
-            liveMarker = createLiveMarker(data.lat, data.lng, kmh);
+            liveMarker = createLiveMarker(data.lat, data.lng, kmh, isoTime);
           } else {
             liveMarker.setLatLng([data.lat, data.lng]);
-            liveMarker.setPopupContent(speedPopupHtml(kmh));
+            liveMarker.setPopupContent(speedPopupHtml(kmh, isoTime));
           }
-          if (firstFix) {
+
+          const stale = applyStaleState(isoTime);
+
+          if (!stale) {
+            document.getElementById("waiting-overlay").classList.remove("visible");
+          }
+
+          if (!stale && firstFix) {
             map.stop();
-            map.flyTo([data.lat, data.lng], 12, {
-              animate: true,
-              duration: 1.8,
-            });
+            map.flyTo([data.lat, data.lng], 12, { animate: true, duration: 1.8 });
             firstFix = false;
           }
         } catch (e) {
-          console.error("GPS Fetch Error", e);
+          console.error("GPS fetch error", e);
         }
       }
 
-      // Show stale overlay when GPS hasn't updated in 60s
-      setInterval(() => {
-        if (lastGpsUpdate !== null && Date.now() - lastGpsUpdate > 60000) {
-          document.getElementById("stale-overlay").classList.add("visible");
-        }
-      }, 3000);
-
-      // ─── FAKE LIVE MARKER (temporary — replace with live tracking below) ──
-      const _fakePos = STINTS[0][0];
-      liveMarker = createLiveMarker(_fakePos[0], _fakePos[1], 0);
+      // Show "waiting" banner until a fresh fix arrives
       document.getElementById("waiting-overlay").classList.add("visible");
-      // lastGpsUpdate = Date.now() - 70000; // ← uncomment to test stale overlay
-      // ── END FAKE MARKER ─────────────────────────────────────────────────
 
-      // Uncomment to enable live tracking (and remove fake marker above):
-      // setInterval(fetchLivePosition, 30000);
-      // fetchLivePosition();
+      setInterval(fetchLivePosition, 30000);
+      fetchLivePosition();
     </script>
   </body>
 </html>
