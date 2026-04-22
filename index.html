@@ -723,7 +723,6 @@
         .then((style) => {
           L.maplibreGL({ style }).addTo(map);
           addOverlays();
-          setTimeout(centreOnLive, 600);
         })
         .catch((err) => {
           console.warn("Style failed, falling back to CARTO:", err);
@@ -736,7 +735,6 @@
             },
           ).addTo(map);
           addOverlays();
-          setTimeout(centreOnLive, 600);
         });
 
       // ─── SPONSOR LOCATIONS ─────────────────────────────────
@@ -1118,7 +1116,7 @@
       }
 
       function centreOnLive(lat, lng) {
-        if (firstFix) {
+        if (firstFix && lat !== undefined && lng !== undefined) {
           map.stop();
           map.flyTo([lat, lng], 14, { animate: true, duration: 1.8 });
           firstFix = false;
