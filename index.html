@@ -25,6 +25,9 @@
     <!-- MapLibre GL Leaflet binding -->
     <script src="https://unpkg.com/@maplibre/maplibre-gl-leaflet/leaflet-maplibre-gl.js"></script>
 
+    <!-- Confetti -->
+    <script src="https://cdn.jsdelivr.net/npm/canvas-confetti@1.9.2/dist/confetti.browser.min.js"></script>
+
     <!-- Mulish font (preconnect first for speed) -->
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
@@ -386,8 +389,8 @@
       }
 
       /* ─── WAITING / STALE OVERLAYS ───────────────────────── */
-      #waiting-overlay,
-      #stale-overlay {
+      #stale-overlay,
+      #finish-overlay {
         position: absolute;
         top: 18px;
         left: 50%;
@@ -408,11 +411,13 @@
         backdrop-filter: blur(6px);
         white-space: nowrap;
       }
-      #waiting-overlay {
-        border-color: rgba(0, 170, 119, 0.75);
+      #finish-overlay {
+        border-color: var(--green-munseli);
+        pointer-events: auto;
+        cursor: pointer;
       }
-      #waiting-overlay.visible,
-      #stale-overlay.visible {
+      #stale-overlay.visible,
+      #finish-overlay.visible {
         opacity: 1;
       }
       .stale-icon {
@@ -496,11 +501,11 @@
     </header>
 
     <div id="map">
-      <div id="waiting-overlay">
-        <div class="stale-icon">⏳</div>
+      <div id="finish-overlay" onclick="this.classList.remove('visible')">
+        <div class="stale-icon">🏁</div>
         <div>
-          <div class="stale-title">Waiting for start</div>
-          <div class="stale-desc">Expected start: April 28th, 9:00 AM</div>
+          <div class="stale-title">Infinite Apollo has arrived!</div>
+          <div class="stale-desc">Thanks for following along!</div>
         </div>
       </div>
 
@@ -908,13 +913,51 @@
       }
 
       let lastDbTime = null;
+      let interpRAF = null;
+      let finishTriggered = false;
+      const POLL_MS = 5000;
+      const INTERP_MS = 4500;
+      const FINISH_COORDS = STINTS[4][STINTS[4].length - 1];
 
-      function centreOnLive() {
-        if (liveMarker && firstFix) {
-          map.flyTo(liveMarker.getLatLng(), 12, {
-            animate: true,
-            duration: 1.8,
+      function fireFinishConfetti() {
+        const colors = ["#00aa77", "#2754a4", "#f9fbfb", "#ffd700"];
+        const burst = (origin) =>
+          confetti({
+            particleCount: 120,
+            spread: 80,
+            origin,
+            colors,
+            zIndex: 9999,
           });
+        burst({ x: 0.3, y: 0.5 });
+        setTimeout(() => burst({ x: 0.7, y: 0.5 }), 150);
+        setTimeout(() => burst({ x: 0.5, y: 0.4 }), 300);
+      }
+
+      function moveMarkerTo(lat, lng) {
+        if (interpRAF) {
+          cancelAnimationFrame(interpRAF);
+          interpRAF = null;
+        }
+        const from = liveMarker.getLatLng();
+        let startTime = null;
+        function step(ts) {
+          if (!startTime) startTime = ts;
+          const t = Math.min((ts - startTime) / INTERP_MS, 1);
+          liveMarker.setLatLng([
+            from.lat + (lat - from.lat) * t,
+            from.lng + (lng - from.lng) * t,
+          ]);
+          if (t < 1) interpRAF = requestAnimationFrame(step);
+          else interpRAF = null;
+        }
+        interpRAF = requestAnimationFrame(step);
+      }
+
+      function centreOnLive(lat, lng) {
+        if (firstFix) {
+          map.stop();
+          map.flyTo([lat, lng], 14, { animate: true, duration: 1.8 });
           firstFix = false;
         }
       }
@@ -922,8 +965,12 @@
       const STALE_MS = 60000;
 
       function applyStaleState(isoTime) {
-        const isStale = !isoTime || Date.now() - new Date(isoTime * 1000).getTime() > STALE_MS;
-        document.getElementById("stale-overlay").classList.toggle("visible", isStale);
+        const isStale =
+          !isoTime ||
+          Date.now() - new Date(isoTime * 1000).getTime() > STALE_MS;
+        document
+          .getElementById("stale-overlay")
+          .classList.toggle("visible", isStale && !finishTriggered);
         const ring = document.querySelector(".live-ring");
         if (ring) ring.classList.toggle("paused", isStale);
         return isStale;
@@ -933,37 +980,38 @@
         try {
           const data = await (await fetch(GPS_ENDPOINT)).json();
           if (!data || data.lat === undefined) return;
-          const kmh = Math.round(data.spd || 0);
+          const raw = data.spd || 0;
+          const kmh = raw < 0.5 ? "0" : raw.toFixed(1);
           const isoTime = data.time || null;
           if (isoTime) lastDbTime = new Date(isoTime * 1000);
 
           if (!liveMarker) {
             liveMarker = createLiveMarker(data.lat, data.lng, kmh, isoTime);
           } else {
-            liveMarker.setLatLng([data.lat, data.lng]);
+            moveMarkerTo(data.lat, data.lng);
             liveMarker.setPopupContent(speedPopupHtml(kmh, isoTime));
+          }
+
+          if (!finishTriggered) {
+            const dist = L.latLng(data.lat, data.lng).distanceTo(
+              L.latLng(FINISH_COORDS[0], FINISH_COORDS[1]),
+            );
+            if (dist <= 80) {
+              finishTriggered = true;
+              document.getElementById("finish-overlay").classList.add("visible");
+              setTimeout(fireFinishConfetti, 3000);
+            }
           }
 
           const stale = applyStaleState(isoTime);
 
-          if (!stale) {
-            document.getElementById("waiting-overlay").classList.remove("visible");
-          }
-
-          if (!stale && firstFix) {
-            map.stop();
-            map.flyTo([data.lat, data.lng], 12, { animate: true, duration: 1.8 });
-            firstFix = false;
-          }
+          centreOnLive(data.lat, data.lng);
         } catch (e) {
           console.error("GPS fetch error", e);
         }
       }
 
-      // Show "waiting" banner until a fresh fix arrives
-      document.getElementById("waiting-overlay").classList.add("visible");
-
-      setInterval(fetchLivePosition, 30000);
+      setInterval(fetchLivePosition, POLL_MS);
       fetchLivePosition();
     </script>
   </body>
