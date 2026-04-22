@@ -615,15 +615,15 @@
       // ─── SCHEDULE ──────────────────────────────────────────
       // STINTS array index:  0=1_1, 1=1_2, 2=2_1, 3=2_2, 4=3_1, 5=3_2, 6=4_1, 7=4_2, 8=5_1, 9=5_2
       const STINT_TIMES = [
-        { label: "Stint 1",  time: "09:00 – 09:15" },
-        { label: "Stint 2",  time: "09:25 – 09:30" },
-        { label: "Stint 3",  time: "10:00 – 11:00" },
-        { label: "Stint 4",  time: "11:45 – 12:00" },
-        { label: "Stint 5",  time: "12:30 – 13:30" },
-        { label: "Stint 6",  time: "13:55 – 14:00" },
-        { label: "Stint 7",  time: "15:00 – 15:35" },
-        { label: "Stint 8",  time: "15:55 – 16:00" },
-        { label: "Stint 9",  time: "17:00 – 17:15" },
+        { label: "Stint 1", time: "09:00 – 09:15" },
+        { label: "Stint 2", time: "09:25 – 09:30" },
+        { label: "Stint 3", time: "10:00 – 11:00" },
+        { label: "Stint 4", time: "11:45 – 12:00" },
+        { label: "Stint 5", time: "12:30 – 13:30" },
+        { label: "Stint 6", time: "13:55 – 14:00" },
+        { label: "Stint 7", time: "15:00 – 15:35" },
+        { label: "Stint 8", time: "15:55 – 16:00" },
+        { label: "Stint 9", time: "17:00 – 17:15" },
         { label: "Stint 10", time: "17:20 – 17:30" },
       ];
 
@@ -1125,7 +1125,7 @@
         }
       }
 
-      const STALE_MS = 60000;
+      const STALE_MS = 30000;
 
       function applyStaleState(isoTime) {
         const isStale =
