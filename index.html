@@ -610,7 +610,6 @@
       const GPS_ENDPOINT =
         "https://solar-tracker-ab9a8-default-rtdb.europe-west1.firebasedatabase.app/gps/latest.json";
       let liveMarker = null;
-      let firstFix = true;
 
       // ─── SCHEDULE ──────────────────────────────────────────
       // STINTS array index:  0=1_1, 1=1_2, 2=2_1, 3=2_2, 4=3_1, 5=3_2, 6=4_1, 7=4_2, 8=5_1, 9=5_2
@@ -718,11 +717,24 @@
       });
 
       // ─── BOOTSTRAP ─────────────────────────────────────────
+      function flyToCarWhenReady() {
+        if (liveMarker) {
+          const ll = liveMarker.getLatLng();
+          map.stop();
+          map.flyTo([ll.lat, ll.lng], 14, { animate: true, duration: 1.8 });
+        }
+      }
+
       fetch("mapStyle.json")
         .then((r) => r.json())
         .then((style) => {
-          L.maplibreGL({ style }).addTo(map);
+          const glLayer = L.maplibreGL({ style }).addTo(map);
           addOverlays();
+          // Wait for MapLibre GL's own load event (fires after style + first render).
+          // On first load this can take >600ms, so a fixed timeout is unreliable.
+          glLayer
+            .getMaplibreMap()
+            .once("load", () => setTimeout(flyToCarWhenReady, 2000));
         })
         .catch((err) => {
           console.warn("Style failed, falling back to CARTO:", err);
@@ -735,6 +747,7 @@
             },
           ).addTo(map);
           addOverlays();
+          setTimeout(flyToCarWhenReady, 3000);
         });
 
       // ─── SPONSOR LOCATIONS ─────────────────────────────────
@@ -913,17 +926,19 @@
       ];
 
       // ─── OVERLAYS ──────────────────────────────────────────
+      let activeStintLine = null;
+      const STINT_DEFAULT = { weight: 5, opacity: 0.85, color: "#00aa77" };
+      const STINT_ACTIVE = { weight: 5, opacity: 1, color: "#00e89a" };
+
       function addOverlays() {
         // Draw all 10 route segments
         STINTS.forEach((coords, i) => {
-          L.polyline(coords, {
-            color: "#00aa77",
-            weight: 5,
-            opacity: 0.85,
+          const visLine = L.polyline(coords, {
+            ...STINT_DEFAULT,
             interactive: false,
           }).addTo(map);
 
-          // Wide invisible line for tooltip interaction
+          // Wide invisible line for tooltip + click interaction
           L.polyline(coords, { color: "#00aa77", weight: 22, opacity: 0.001 })
             .addTo(map)
             .bindTooltip(
@@ -931,8 +946,28 @@
               { className: "stint-tt", sticky: true },
             )
             .on("mousedown", (e) => L.DomEvent.stop(e))
-            .on("click", (e) => L.DomEvent.stop(e))
-            .on("dblclick", (e) => L.DomEvent.stop(e));
+            .on("dblclick", (e) => L.DomEvent.stop(e))
+            .on("click", (e) => {
+              L.DomEvent.stop(e);
+              if (activeStintLine && activeStintLine !== visLine) {
+                activeStintLine.setStyle(STINT_DEFAULT);
+              }
+              if (activeStintLine === visLine) {
+                visLine.setStyle(STINT_DEFAULT);
+                activeStintLine = null;
+              } else {
+                visLine.setStyle(STINT_ACTIVE);
+                visLine.bringToFront();
+                activeStintLine = visLine;
+              }
+            });
+        });
+
+        map.on("click", () => {
+          if (activeStintLine) {
+            activeStintLine.setStyle(STINT_DEFAULT);
+            activeStintLine = null;
+          }
         });
 
         // ── Partner stop markers ──────────────────────────────
@@ -1115,14 +1150,6 @@
         interpRAF = requestAnimationFrame(step);
       }
 
-      function centreOnLive(lat, lng) {
-        if (firstFix && lat !== undefined && lng !== undefined) {
-          map.stop();
-          map.flyTo([lat, lng], 14, { animate: true, duration: 1.8 });
-          firstFix = false;
-        }
-      }
-
       const STALE_MS = 30000;
 
       function applyStaleState(isoTime) {
@@ -1167,7 +1194,6 @@
           }
 
           applyStaleState(isoTime);
-          centreOnLive(data.lat, data.lng);
         } catch (e) {
           console.error("GPS fetch error", e);
         }
