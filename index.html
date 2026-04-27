@@ -25,9 +25,6 @@
     <!-- MapLibre GL Leaflet binding -->
     <script src="https://unpkg.com/@maplibre/maplibre-gl-leaflet/leaflet-maplibre-gl.js"></script>
 
-    <!-- Confetti -->
-    <!-- <script src="https://cdn.jsdelivr.net/npm/canvas-confetti@1.9.2/dist/confetti.browser.min.js"></script> -->
-
     <!-- Preconnect to CDNs so DNS+TCP is ready when scripts download -->
     <link rel="preconnect" href="https://cdnjs.cloudflare.com" />
     <link rel="preconnect" href="https://unpkg.com" />
@@ -1086,7 +1083,7 @@
       function relativeTime(epochSeconds) {
         if (!epochSeconds) return "—";
         const s = Math.floor((Date.now() - epochSeconds * 1000) / 1000);
-        if (s < 5) return "just now";
+        if (s < 10) return "just now";
         if (s < 60) return `${s} seconds ago`;
         if (s < 120) return "1 minute ago";
         if (s < 3600) return `${Math.floor(s / 60)} minutes ago`;
@@ -1124,24 +1121,9 @@
       let lastKmh = "0";
       let interpRAF = null;
       let finishTriggered = false;
-      const POLL_MS = 5000;
-      const INTERP_MS = 4500;
+      const POLL_MS = 3000;
+      const INTERP_MS = 6000;
       const FINISH_COORDS = STINTS[9][STINTS[9].length - 1];
-
-      function fireFinishConfetti() {
-        const colors = ["#00aa77", "#2754a4", "#f9fbfb", "#ffd700"];
-        const burst = (origin) =>
-          confetti({
-            particleCount: 120,
-            spread: 80,
-            origin,
-            colors,
-            zIndex: 9999,
-          });
-        burst({ x: 0.3, y: 0.75 });
-        setTimeout(() => burst({ x: 0.7, y: 0.75 }), 150);
-        setTimeout(() => burst({ x: 0.5, y: 0.65 }), 300);
-      }
 
       function moveMarkerTo(lat, lng) {
         if (interpRAF) {
@@ -1203,7 +1185,6 @@
               document
                 .getElementById("finish-overlay")
                 .classList.add("visible");
-              // setTimeout(fireFinishConfetti, 3000);
             }
           }
 
