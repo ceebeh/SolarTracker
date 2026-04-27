@@ -28,6 +28,10 @@
     <!-- Confetti -->
     <!-- <script src="https://cdn.jsdelivr.net/npm/canvas-confetti@1.9.2/dist/confetti.browser.min.js"></script> -->
 
+    <!-- Preconnect to CDNs so DNS+TCP is ready when scripts download -->
+    <link rel="preconnect" href="https://cdnjs.cloudflare.com" />
+    <link rel="preconnect" href="https://unpkg.com" />
+
     <!-- Mulish font (preconnect first for speed) -->
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
@@ -605,6 +609,7 @@
     </footer>
 
     <script src="routeData.js"></script>
+    <script src="mapStyle.js"></script>
     <script>
       // ─── CONFIG ────────────────────────────────────────────
       const GPS_ENDPOINT =
@@ -725,19 +730,15 @@
         }
       }
 
-      fetch("mapStyle.json")
-        .then((r) => r.json())
-        .then((style) => {
-          const glLayer = L.maplibreGL({ style }).addTo(map);
+      Promise.resolve().then(() => {
+        if (typeof MAP_STYLE !== "undefined") {
+          const glLayer = L.maplibreGL({ style: MAP_STYLE }).addTo(map);
           addOverlays();
-          // Wait for MapLibre GL's own load event (fires after style + first render).
-          // On first load this can take >600ms, so a fixed timeout is unreliable.
           glLayer
             .getMaplibreMap()
-            .once("load", () => setTimeout(flyToCarWhenReady, 2000));
-        })
-        .catch((err) => {
-          console.warn("Style failed, falling back to CARTO:", err);
+            .once("load", () => setTimeout(flyToCarWhenReady, 3000));
+        } else {
+          console.warn("MAP_STYLE not found, falling back to CARTO");
           L.tileLayer(
             "https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png",
             {
@@ -748,7 +749,8 @@
           ).addTo(map);
           addOverlays();
           setTimeout(flyToCarWhenReady, 3000);
-        });
+        }
+      });
 
       // ─── SPONSOR LOCATIONS ─────────────────────────────────
       const SPONSORS = [
@@ -1081,8 +1083,18 @@
         });
       }
 
+      function relativeTime(epochSeconds) {
+        if (!epochSeconds) return "—";
+        const s = Math.floor((Date.now() - epochSeconds * 1000) / 1000);
+        if (s < 5)   return "just now";
+        if (s < 60)  return `${s} seconds ago`;
+        if (s < 120) return "1 minute ago";
+        if (s < 3600) return `${Math.floor(s / 60)} minutes ago`;
+        return `${Math.floor(s / 3600)} hours ago`;
+      }
+
       function speedPopupHtml(kmh, epochTime) {
-        const timeStr = epochTime ? formatCEST(epochTime) + " CEST" : "—";
+        const timeStr = epochTime ? relativeTime(epochTime) : "—";
         return `<div class="live-popup-inner">
           <div class="live-popup-name">Infinite Apollo</div>
           <div class="live-popup-label">Current Speed</div>
@@ -1109,6 +1121,7 @@
       }
 
       let lastDbTime = null;
+      let lastKmh = "0";
       let interpRAF = null;
       let finishTriggered = false;
       const POLL_MS = 5000;
@@ -1172,6 +1185,7 @@
           const kmh = raw < 0.5 ? "0" : raw.toFixed(1);
           const isoTime = data.time || null;
           if (isoTime) lastDbTime = new Date(isoTime * 1000);
+          lastKmh = kmh;
 
           if (!liveMarker) {
             liveMarker = createLiveMarker(data.lat, data.lng, kmh, isoTime);
@@ -1201,6 +1215,14 @@
 
       setInterval(fetchLivePosition, POLL_MS);
       fetchLivePosition();
+
+      setInterval(() => {
+        if (liveMarker && liveMarker.isPopupOpen() && lastDbTime) {
+          liveMarker.setPopupContent(
+            speedPopupHtml(lastKmh, lastDbTime.getTime() / 1000),
+          );
+        }
+      }, 1000);
     </script>
   </body>
 </html>
